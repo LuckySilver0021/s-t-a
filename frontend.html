@@ -1,0 +1,227 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Smart Task Analyzer — Frontend</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial;margin:16px}
+    .container{max-width:900px;margin:0 auto}
+    textarea{width:100%;height:120px;font-family:monospace}
+    .task{border:1px solid #ddd;padding:8px;margin:6px 0;border-radius:6px}
+    .high{background:#ffecec;border-color:#ffb3b3}
+    .medium{background:#fff7e6}
+    .low{background:#ecffe8}
+    .muted{color:#666;font-size:13px}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    .col{flex:1;min-width:200px}
+    button{padding:8px 12px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Smart Task Analyzer</h2>
+
+    <div>
+      <h3>Input</h3>
+      <div class="row">
+        <div class="col">
+          <form id="addForm">
+            <input id="title" placeholder="Title" required style="width:100%"/><br/><br/>
+            <input id="due_date" type="date" style="width:100%"/><br/><br/>
+            <input id="estimated_hours" type="number" step="0.5" placeholder="Estimated hours" style="width:100%"/><br/><br/>
+            <input id="importance" type="number" min="1" max="10" placeholder="Importance 1-10" style="width:100%"/><br/><br/>
+            <input id="dependencies" placeholder="Dependencies (comma separated titles)" style="width:100%"/><br/><br/>
+            <button type="submit">Add Task</button>
+          </form>
+        </div>
+
+        <div class="col">
+          <label>Bulk JSON (paste array of tasks):</label>
+          <textarea id="bulk"></textarea>
+          <div class="row" style="margin-top:8px">
+            <select id="strategy">
+              <option value="smart">Smart Balance</option>
+              <option value="fastest">Fastest Wins</option>
+              <option value="impact">High Impact</option>
+              <option value="deadline">Deadline Driven</option>
+            </select>
+            <button id="analyzeBtn">Analyze Tasks</button>
+            <button id="suggestBtn">Get Top 3 Suggestions</button>
+            <button id="saveBtn">Save to Server</button>
+            <button id="loadBtn">Load from Server</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr/>
+
+    <div>
+      <h3>Tasks</h3>
+      <div id="tasksList" class="muted">No tasks yet.</div>
+    </div>
+
+    <hr/>
+
+    <div>
+      <h3>Suggestions</h3>
+      <div id="suggestions" class="muted">No suggestions yet.</div>
+    </div>
+  </div>
+
+  <script>
+  // backend API (frontend served from http://localhost:8001)
+  const API_BASE = 'http://localhost:8000/api/tasks';
+
+  // safely parse JSON responses (if server returns HTML/error page, avoid crash)
+  async function parseJsonSafe(response) {
+    const text = await response.text();
+    try { return JSON.parse(text); }
+    catch (e) { return { _rawText: text, ok: response.ok, status: response.status }; }
+  }
+
+  let localTasks = [];
+
+  function renderTasks(tasks) {
+    const el = document.getElementById('tasksList');
+    if (!tasks || tasks.length === 0) { el.innerHTML = '<div class="muted">No tasks.</div>'; return; }
+    el.innerHTML = tasks.map(t => {
+      const cls = t.priority === 'High' ? 'task high' : (t.priority === 'Medium' ? 'task medium' : 'task low');
+      const notes = (t.breakdown && t.breakdown.notes) ? ('<div class="muted">Notes: '+ t.breakdown.notes.join('; ') +'</div>') : '';
+      return `<div class="${cls}">
+        <strong>${t.title}</strong> — Score: ${t.score} — <em>${t.priority}</em><br/>
+        <div class="muted">${t.due_date || ''} • ${t.estimated_hours || '-'}h • importance ${t.importance || '-'}</div>
+        ${notes}
+        <div style="margin-top:6px">${(t.explanation||[]).map(n=>'<div class="muted">• '+n+'</div>').join('')}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderSuggestions(list) {
+    const el = document.getElementById('suggestions');
+    if (!list || list.length===0) { el.innerHTML = '<div class="muted">No suggestions.</div>'; return; }
+    el.innerHTML = list.map(s => `<div class="task ${s.priority==='High'?'high': s.priority==='Medium'?'medium':'low'}">
+      <strong>${s.title}</strong> — ${s.score} — <em>${s.priority}</em>
+      <div class="muted">${(s.explanation||[]).join('; ')}</div>
+    </div>`).join('');
+  }
+
+  document.getElementById('addForm').addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const t = {
+      title: document.getElementById('title').value.trim(),
+      due_date: document.getElementById('due_date').value || null,
+      estimated_hours: document.getElementById('estimated_hours').value ? Number(document.getElementById('estimated_hours').value) : undefined,
+      importance: document.getElementById('importance').value ? Number(document.getElementById('importance').value) : undefined,
+      dependencies: document.getElementById('dependencies').value ? document.getElementById('dependencies').value.split(',').map(s=>s.trim()).filter(Boolean) : []
+    };
+    if (!t.title) { alert('Title required'); return; }
+    localTasks.push(t);
+    renderTasks(localTasks);
+    e.target.reset();
+  });
+
+  async function getPayloadFromInputsOrBulk() {
+    const bulk = document.getElementById('bulk').value.trim();
+    let payload = localTasks.slice();
+    if (bulk) {
+      try {
+        const parsed = JSON.parse(bulk);
+        if (Array.isArray(parsed)) payload = parsed;
+        else { alert('Bulk JSON must be an array'); return; }
+      } catch(err){ alert('Invalid JSON'); return; }
+    }
+    if (!payload || payload.length===0) { alert('No tasks to analyze'); return; }
+    return payload;
+  }
+
+  document.getElementById('analyzeBtn').addEventListener('click', async ()=>{
+    const payload = await getPayloadFromInputsOrBulk();
+    if (!payload) return;
+
+    const strategy = document.getElementById('strategy').value || 'smart';
+    try {
+      const res = await fetch(`${API_BASE}/analyze/?strategy=${strategy}`, {
+         method: 'POST',
+         headers: {'Content-Type':'application/json'},
+         body: JSON.stringify(payload)
+       });
+      const data = await parseJsonSafe(res);
+      if (!res.ok) { alert(JSON.stringify(data)); return; }
+      // backend returns an array of scored tasks
+      const list = Array.isArray(data) ? data : (data.tasks || data);
+      if (!Array.isArray(list)) { alert('Unexpected response from server'); return; }
+      // update local tasks and render
+      localTasks = list;
+      renderTasks(localTasks);
+      const top3 = localTasks.slice(0,3);
+      renderSuggestions(top3);
+      document.getElementById('suggestions').scrollIntoView({behavior:'smooth'});
+    } catch(err){
+      alert('Network error: '+err.message);
+    }
+  });
+
+  document.getElementById('suggestBtn').addEventListener('click', async ()=>{
+    // Prefer analyzing current tasks on client and showing top-3.
+    const payload = await getPayloadFromInputsOrBulk();
+    if (!payload) return;
+
+    const strategy = document.getElementById('strategy').value || 'smart';
+    try {
+      // Reuse analyze endpoint to get scored tasks and then show top-3
+      const res = await fetch(`${API_BASE}/analyze/?strategy=${strategy}`, {
+         method: 'POST',
+         headers: {'Content-Type':'application/json'},
+         body: JSON.stringify(payload)
+       });
+      const data = await parseJsonSafe(res);
+      if (!res.ok) { alert(JSON.stringify(data)); return; }
+      const list = Array.isArray(data) ? data : (data.tasks || data);
+      if (!Array.isArray(list)) { alert('Unexpected response from server'); return; }
+      // update local and show top3
+      localTasks = list;
+      const top3 = localTasks.sort((a,b)=>b.score - a.score).slice(0,3);
+      renderSuggestions(top3);
+      renderTasks(localTasks);
+    } catch(err){
+      // fallback: try GET /suggest/ which uses last analyzed server state
+      try {
+        const res2 = await fetch(`${API_BASE}/suggest/?strategy=${strategy}`);
+        const data2 = await parseJsonSafe(res2);
+        if (!res2.ok) { alert(JSON.stringify(data2)); return; }
+        renderSuggestions(data2.suggestions || []);
+      } catch(err2){
+        alert('Network error: '+err.message);
+      }
+    }
+  });
+
+  document.getElementById('saveBtn').addEventListener('click', async ()=>{
+    const payload = await getPayloadFromInputsOrBulk();
+    if (!payload) return;
+    try {
+      const res = await fetch(`${API_BASE}/`, {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      const data = await parseJsonSafe(res);
+      if (!res.ok) { alert(JSON.stringify(data)); return; }
+      alert('Saved to server successfully');
+    } catch(err){ alert('Network error: '+err.message); }
+  });
+
+  document.getElementById('loadBtn').addEventListener('click', async ()=>{
+    try {
+      const res = await fetch(`${API_BASE}/`);
+      const data = await parseJsonSafe(res);
+      if (!res.ok) { alert(JSON.stringify(data)); return; }
+      if (!Array.isArray(data)) { alert('Unexpected server response'); return; }
+      localTasks = data;
+      renderTasks(localTasks);
+      alert('Loaded ' + data.length + ' tasks from server');
+    } catch(err){ alert('Network error: '+err.message); }
+  });
+  </script>
+</body>
+</html>
