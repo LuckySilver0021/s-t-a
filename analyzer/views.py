@@ -12,30 +12,44 @@ LAST_ANALYZED = []
 
 class AnalyzeTasks(APIView):
     def post(self, request):
-        # strategy may be provided as query param: ?strategy=fastest|impact|deadline|smart
-        strategy = request.query_params.get('strategy', 'smart')
+        # Accept either:
+        # - a JSON array of tasks
+        # - or an object {"tasks": [...], "strategy": "...", "weights": {...}}
+        payload = request.data
+        if isinstance(payload, dict) and 'tasks' in payload:
+            tasks_input = payload.get('tasks')
+            strategy = payload.get('strategy', request.query_params.get('strategy', 'smart'))
+            weights_override = payload.get('weights')
+        else:
+            tasks_input = payload
+            strategy = request.query_params.get('strategy', 'smart')
+            weights_override = None
 
-        serializer = TaskSerializer(data=request.data, many=True)
-
+        serializer = TaskSerializer(data=tasks_input, many=True)
         if not serializer.is_valid():
             return Response(serializer.errors, status=400)
 
         tasks = serializer.validated_data
         task_map = {t["title"]: t for t in tasks}
 
+        # Edge case: Prevent past-due dates on creation
+        today = datetime.today().date()
+        for t in tasks:
+            if t.get('due_date') and t['due_date'] < today:
+                return Response({"error": f"Task '{t['title']}' has a due date in the past. Please choose today or a future date."}, status=400)
+
         # Circular dependency check
         maps_for_check = {t["title"]: t for t in tasks}
         if detect_circular(maps_for_check):
-            return Response(
-                {"error": "Circular dependencies detected"}, status=400
-            )
+            return Response({"error": "Circular dependencies detected. Please fix task dependencies to avoid cycles."}, status=400)
 
         # Scoring
         scored_tasks = []
         for task in tasks:
-            score, breakdown = calculate_priority(task, task_map, strategy=strategy)
+            score, breakdown = calculate_priority(task, task_map, strategy=strategy, weights_override=weights_override)
             task["score"] = score
             task["breakdown"] = breakdown
+            task["explanation"] = breakdown.get('explanation', breakdown.get('notes', []))
             # human priority label
             if score >= 45:
                 task["priority"] = 'High'

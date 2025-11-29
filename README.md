@@ -1,38 +1,69 @@
+
 # Smart Task Analyzer
 
-Demo app that scores & prioritizes tasks by urgency, importance, effort and dependencies.
+## Overview
+Smart Task Analyzer is a Django + HTML/JS mini-app that scores and prioritizes tasks based on urgency, importance, effort, and dependencies. It helps users decide what to work on next, with a clean UI and configurable algorithm.
 
-Run (development):
+## Setup Instructions
+1. Clone the repo and create a virtual environment:
+	```bash
+	python -m venv .venv
+	.venv\Scripts\activate
+	pip install -r requirements.txt
+	```
+2. Run migrations and start the backend:
+	```bash
+	python manage.py makemigrations
+	python manage.py migrate
+	python manage.py runserver 8000
+	```
+3. Serve the frontend (optional, for CORS):
+	```bash
+	python -m http.server 8001
+	# open http://localhost:8001/frontend.html
+	```
 
-1. Create venv and install dependencies:
+## API Endpoints
+- `POST /api/tasks/analyze/?strategy=smart|fastest|impact|deadline` — accepts JSON array or `{tasks: [...], strategy, weights}` and returns scored/sorted array.
+- `GET /api/tasks/suggest/?strategy=...` — returns top-3 suggestions with explanations.
+- `GET/POST /api/tasks/` — persist and list tasks.
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
+## Algorithm Explanation
+The scoring algorithm combines four factors:
+- **Urgency**: Tasks due soon (or past-due) gets higher score.
+- **Importance**: User-provided rating (1-10) is scaled accordingly.
+- **Effort**: Lower estimated hours are "quick wins" and get a small boost.
+- **Dependencies**: Tasks that block others get extra weight, so unblocking increases overall thruput.
 
-2. Start backend:
+Each factor is multiplied by a configurable weight. Four strategies are available:
+- `smart`: balanced weights for all factors
+- `fastest`: prioritizes quick wins
+- `impact`: prioritizes importance
+- `deadline`: prioritizes urgency
 
-```bash
-python manage.py runserver 8000
-```
+The algorithm is robust to missing/invalid data. Circular dependencies are detected and rejected. The backend returns a breakdown and a human-readable explanation for each score.
 
-3. Serve frontend (optional) from project root so it's available at http://localhost:8001:
+**Example:**
+For a task due today, with high importance and low effort, the score will be high due to urgency and importance. If it blocks other tasks, the dependency weight increases its score further.
 
-```bash
-python -m http.server 8001
-# then open http://localhost:8001/frontend.html
-```
+## Design Decisions
+- **Title-based dependencies**: Used Task titles for dependencies & simplicity
+- **Configurable weights**: Allows users to tune the algorithm for their tasks (e.g., deadline-driven vs. high-impact).
+- **Edge-case handling**: Defaults and notes for missing/invalid fields; circular detection before scoring.
+- **No authentication**: Kept simple per assignment.
 
-API Endpoints
 
-- `POST /api/tasks/analyze/?strategy=smart|fastest|impact|deadline` — accepts JSON array of tasks and returns scored/sorted array.
-- `GET /api/tasks/suggest/?strategy=...` — returns top-3 suggestions based on last analyzed set.
+## Bonus Challenges
+- Persistence: Tasks are saved in SQLite via Django model.
+- Configurable algorithm: Weights and strategies can be set per request.
+- Circular dependency detection: Implemented and tested.
 
-Notes
 
-- CORS is enabled for `http://localhost:8001` to allow the demo frontend to call the backend.
-- Unit tests for utils and basic integration test for views are included under `analyzer/tests/`.
+## Unit Tests
+At least 3 unit tests for scoring and circular detection are in `analyzer/tests.py`.
 
-Next steps: add persistence, unit tests for views with DB persistence, and optional visualizations.
+## Requirements
+- Python 3.8+
+- Django 4.0+
+- SQLite (default)
+- No authentication required
