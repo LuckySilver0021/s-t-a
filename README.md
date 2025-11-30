@@ -68,7 +68,11 @@ At least 3 unit tests for scoring and circular detection are in `analyzer/tests.
 - SQLite (default)
 - No authentication required
 
-## Sample data (for `/api/tasks/suggest` or `http://127.0.0.1:8000/api/tasks/analyze`)
+## API Sample Data for endpoints
+
+http://127.0.0.1:8000/api/tasks/analyze
+
+Sample Payload:
 [
   {
     "id": "task1",
@@ -99,9 +103,31 @@ At least 3 unit tests for scoring and circular detection are in `analyzer/tests.
   }
 ]
 
-## Sample data (for `http://127.0.0.1:8001/frontend.html`)
- [
-  {"title":"Fix login bug","due_date":"2025-12-01","estimated_hours":3,"importance":8,"dependencies":[]},
-  {"title":"Write API docs","due_date":"2025-12-03","estimated_hours":1,"importance":6,"dependencies":["Fix login bug"]},
-  {"title":"Quick docs","due_date":"2025-12-02","estimated_hours":1,"importance":4,"dependencies":[]}
+## Frontend Sample Data
+
+http://127.0.0.1:8001/frontend.html
+
+Sample Payload:
+[
+  {
+    "title": "Fix login bug",
+    "due_date": "2025-12-01",
+    "estimated_hours": 3,
+    "importance": 8,
+    "dependencies": []
+  },
+  {
+    "title": "Write API docs",
+    "due_date": "2025-12-03",
+    "estimated_hours": 1,
+    "importance": 6,
+    "dependencies": ["Fix login bug"]
+  },
+  {
+    "title": "Quick docs",
+    "due_date": "2025-12-02",
+    "estimated_hours": 1,
+    "importance": 4,
+    "dependencies": []
+  }
 ]
