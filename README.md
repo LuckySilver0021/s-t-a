@@ -67,3 +67,41 @@ At least 3 unit tests for scoring and circular detection are in `analyzer/tests.
 - Django 4.0+
 - SQLite (default)
 - No authentication required
+
+## Sample data (for `/api/tasks/suggest` or `http://127.0.0.1:8000/api/tasks/analyze`)
+[
+  {
+    "id": "task1",
+    "title": "Build API",
+    "description": "Design and create REST API",
+    "deadline": "2025-02-01",
+    "priority": 1,
+    "category": "Development",
+    "dependencies": []
+  },
+  {
+    "id": "task2",
+    "title": "Write Documentation",
+    "description": "Document endpoints",
+    "deadline": "2025-02-10",
+    "priority": 2,
+    "category": "Documentation",
+    "dependencies": ["task1"]
+  },
+  {
+    "id": "task3",
+    "title": "Frontend Integration",
+    "description": "Connect API to frontend",
+    "deadline": "2025-02-05",
+    "priority": 1,
+    "category": "Integration",
+    "dependencies": ["task1"]
+  }
+]
+
+## Sample data (for `http://127.0.0.1:8001/frontend.html`)
+ [
+  {"title":"Fix login bug","due_date":"2025-12-01","estimated_hours":3,"importance":8,"dependencies":[]},
+  {"title":"Write API docs","due_date":"2025-12-03","estimated_hours":1,"importance":6,"dependencies":["Fix login bug"]},
+  {"title":"Quick docs","due_date":"2025-12-02","estimated_hours":1,"importance":4,"dependencies":[]}
+]
